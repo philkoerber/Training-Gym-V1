@@ -4,6 +4,7 @@ import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import TensorBoardLogger
 
+from callbacks import QuantConnectUploadCallback
 from data_loader import load_or_download
 from dataset import create_dataloaders
 from model import TimeSeriesLightningModule
@@ -84,6 +85,7 @@ def train(
             mode="min",
             save_top_k=1,
         ),
+        QuantConnectUploadCallback(key_prefix="models"),
     ]
     
     # Logger

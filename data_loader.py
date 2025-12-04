@@ -226,24 +226,42 @@ def load_all_symbols(
     from feature_engineering import add_interconnectivity_features
     symbol_dfs = add_interconnectivity_features(symbol_dfs)
     
-    # Step 3: Add symbol identifier features and combine
+    # Step 3: Align by timestamp and combine (one row per timestamp with all symbols)
     print(f"\n{'='*50}")
     print("Combining symbols...")
     print(f"{'='*50}")
     
-    all_dfs = []
+    # Align all DataFrames by timestamp (inner join to keep only common timestamps)
+    # This ensures one row per timestamp with features from all symbols
+    combined_df = None
     for symbol in symbols:
         df = symbol_dfs[symbol].copy()
         
-        # Add one-hot encoded symbol features
-        for s in symbols:
-            df[f"symbol_{s.replace('/', '_')}"] = 1.0 if s == symbol else 0.0
+        # Prefix ALL column names with symbol to avoid conflicts
+        prefix = symbol.replace('/', '_') + '_'
+        rename_dict = {col: prefix + col for col in df.columns}
+        df = df.rename(columns=rename_dict)
         
-        all_dfs.append(df)
+        if combined_df is None:
+            combined_df = df
+        else:
+            # Merge on timestamp index (inner join to keep only overlapping timestamps)
+            combined_df = combined_df.join(df, how='inner')
     
-    # Combine all DataFrames
-    combined_df = pd.concat(all_dfs, axis=0)
     combined_df = combined_df.sort_index()
+    
+    # Use BTC/USD close as the primary target (rename it to 'close' for compatibility)
+    # This maintains compatibility with dataset.py which expects a 'close' column
+    btc_close_col = 'BTC_USD_close'
+    if btc_close_col in combined_df.columns:
+        combined_df['close'] = combined_df[btc_close_col]
+    
+    # Drop rows with any NaN values (from alignment)
+    initial_len = len(combined_df)
+    combined_df = combined_df.dropna()
+    dropped = initial_len - len(combined_df)
+    if dropped > 0:
+        print(f"Dropped {dropped} rows with NaN values after alignment")
     
     print(f"Combined dataset shape: {combined_df.shape}")
     print(f"Total rows: {len(combined_df)}")

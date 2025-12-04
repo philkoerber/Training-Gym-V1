@@ -23,6 +23,7 @@ def train(
     max_epochs: int = 50,
     lr: float = 1e-3,
     timeframe: TimeFrame = TimeFrame.Minute,
+    use_cloud: bool = False,
 ):
     """
     Train a time-series forecasting model on BTC/USD, ETH/USD, and LTC/USD.
@@ -38,6 +39,7 @@ def train(
         max_epochs: Maximum training epochs
         lr: Learning rate
         timeframe: Data granularity (TimeFrame.Minute or TimeFrame.Hour)
+        use_cloud: If True, train on cloud/remote GPU servers; if False, use MPS on local Mac
     """
     # Load all three symbols with interconnectivity features
     timeframe_str = "minutely" if timeframe == TimeFrame.Minute else "hourly"
@@ -99,13 +101,37 @@ def train(
     # Logger
     logger = TensorBoardLogger("logs", name=model_type)
     
+    # Configure accelerator based on use_cloud flag
+    if use_cloud:
+        # For Lightning cloud/remote GPU servers
+        # Check for Lightning credentials if using Lightning AI cloud
+        lightning_api_key = os.getenv("LIGHTNING_API_KEY")
+        if lightning_api_key:
+            print(f"\n{'='*50}")
+            print("Lightning AI cloud credentials detected")
+            print(f"{'='*50}")
+        else:
+            print(f"\n{'='*50}")
+            print("Training on remote GPU servers (Lightning AI credentials optional)")
+            print(f"{'='*50}")
+        
+        accelerator = "gpu"
+        devices = "auto"  # Auto-detect available GPUs
+    else:
+        # For local Mac with MPS
+        print(f"\n{'='*50}")
+        print("Training on local Mac with MPS (Metal)...")
+        print(f"{'='*50}")
+        accelerator = "mps"
+        devices = 1
+    
     # Trainer
     trainer = L.Trainer(
         max_epochs=max_epochs,
         callbacks=callbacks,
         logger=logger,
-        accelerator="auto",
-        devices=1,
+        accelerator=accelerator,
+        devices=devices,
         enable_progress_bar=True,
     )
     
@@ -138,6 +164,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--timeframe", type=str, default="minute", choices=["minute", "hour"])
+    parser.add_argument("--cloud", action="store_true", help="Train on cloud/remote GPU servers instead of local MPS")
     
     args = parser.parse_args()
     
@@ -155,5 +182,6 @@ if __name__ == "__main__":
         max_epochs=args.max_epochs,
         lr=args.lr,
         timeframe=tf,
+        use_cloud=args.cloud,
     )
 

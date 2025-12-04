@@ -23,22 +23,28 @@ ALPACA_API_SECRET=your_secret
 QUANTCONNECT_USER_ID=your_user_id
 QUANTCONNECT_API_TOKEN=your_token
 QUANTCONNECT_ORG_ID=your_org_id  # optional
+LIGHTNING_API_KEY=your_lightning_api_key  # optional, for cloud training
 ```
 
 ## Usage
 
 ### Train
 
+**Local training (Mac with MPS):**
 ```bash
-python train.py --symbol BTC/USD --days 60 --model lstm --max_epochs 50
+python train.py --days 60 --model lstm --max_epochs 50
+```
+
+**Cloud/Remote GPU training:**
+```bash
+python train.py --cloud --days 60 --model lstm --max_epochs 50
 ```
 
 Options:
 | Arg | Default | Description |
 |-----|---------|-------------|
-| `--symbol` | BTC/USD | Crypto pair |
-| `--days` | 60 | Days of history |
-| `--seq_len` | 24 | Lookback window |
+| `--days` | 1460 | Days of history |
+| `--seq_len` | 60 | Lookback window |
 | `--pred_len` | 1 | Prediction horizon |
 | `--model` | lstm | `lstm` or `transformer` |
 | `--hidden_dim` | 64 | Model hidden size |
@@ -46,6 +52,8 @@ Options:
 | `--batch_size` | 32 | Batch size |
 | `--max_epochs` | 50 | Max epochs |
 | `--lr` | 1e-3 | Learning rate |
+| `--timeframe` | minute | `minute` or `hour` |
+| `--cloud` | False | Train on cloud/remote GPU (uses MPS locally if not set) |
 
 ### Predict
 

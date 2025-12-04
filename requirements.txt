@@ -16,4 +16,5 @@ requests>=2.31.0
 
 # Visualization
 matplotlib>=3.7.0
+tensorboard>=2.20.0
 

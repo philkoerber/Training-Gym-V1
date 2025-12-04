@@ -15,7 +15,13 @@ from alpaca.data.historical import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from dotenv import load_dotenv
-from feature_engineering import BASE_PRICE_COLUMNS
+
+# Import feature engineering constants
+try:
+    from feature_engineering import BASE_PRICE_COLUMNS
+except ImportError:
+    # Fallback if feature_engineering not available
+    BASE_PRICE_COLUMNS = ["open", "high", "low", "close", "volume"]
 
 # Load environment variables from .env file
 load_dotenv()

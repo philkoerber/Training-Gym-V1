@@ -1,12 +1,18 @@
 # Training Gym V1
 
-A lightweight time-series forecasting toolkit for crypto price prediction. Train LSTM or Transformer models on hourly OHLCV data, then deploy to QuantConnect.
+A lightweight time-series forecasting toolkit for crypto price prediction. Train LSTM or Transformer models on multi-symbol crypto data with advanced feature engineering, then deploy to QuantConnect.
 
 ## Features
 
 - **Models**: LSTM and Transformer architectures for time-series forecasting
-- **Data**: Automatic download from Alpaca with local caching
+- **Multi-Symbol Support**: Train on BTC/USD, ETH/USD, and LTC/USD simultaneously with interconnectivity features
+- **Feature Engineering**: 
+  - Time-based features (hour, day of week, day of month, month) with sin/cos encoding
+  - Technical indicators (RSI, MACD, Bollinger Bands, ATR, moving averages)
+  - Cross-symbol features (price ratios, relative returns, correlations, spreads, relative strength)
+- **Data**: Automatic download from Alpaca with local caching and chunking support for large date ranges
 - **Training**: PyTorch Lightning with early stopping, checkpointing, and TensorBoard logging
+- **Cloud Training**: Support for remote GPU training via Lightning AI cloud
 - **Deployment**: Auto-upload best model to QuantConnect Object Store
 
 ## Setup
@@ -29,6 +35,8 @@ LIGHTNING_API_KEY=your_lightning_api_key  # optional, for cloud training
 ## Usage
 
 ### Train
+
+The training script automatically loads BTC/USD, ETH/USD, and LTC/USD data, applies feature engineering (time features, technical indicators, and interconnectivity features), and trains a model on the combined dataset.
 
 **Local training (Mac with MPS):**
 ```bash
@@ -66,16 +74,31 @@ Outputs metrics (MSE, RMSE, MAE, MAPE, Direction Accuracy) and plots predictions
 ## Project Structure
 
 ```
-├── train.py         # Training script
-├── predict.py       # Inference + visualization
-├── model.py         # LSTM & Transformer models
-├── dataset.py       # PyTorch dataset + dataloaders
-├── data_loader.py   # Alpaca data fetching
-├── callbacks.py     # QuantConnect upload callback
-├── checkpoints/     # Saved model weights
-├── logs/            # TensorBoard logs
-└── data/            # Cached OHLCV data
+├── train.py              # Training script
+├── predict.py            # Inference + visualization
+├── model.py              # LSTM & Transformer models
+├── dataset.py            # PyTorch dataset + dataloaders
+├── data_loader.py        # Alpaca data fetching with chunking support
+├── feature_engineering.py # Feature engineering (time, technical, interconnectivity)
+├── callbacks.py          # QuantConnect upload callback
+├── checkpoints/          # Saved model weights
+├── logs/                 # TensorBoard logs
+└── data/                 # Cached OHLCV data
 ```
+
+## Feature Engineering
+
+The `feature_engineering.py` module provides comprehensive feature engineering:
+
+- **Time Features**: Cyclical encoding of hour, day of week, day of month, and month using sin/cos transformations
+- **Technical Indicators**: RSI, MACD, Bollinger Bands, ATR, and multiple moving averages (configurable periods)
+- **Interconnectivity Features**: Cross-symbol features including:
+  - Price ratios between symbol pairs (e.g., BTC/ETH ratio)
+  - Relative returns (how each symbol performs vs others)
+  - Rolling correlations between symbols
+  - Spread features and relative strength
+
+Features are automatically applied during training. The `engineer_features()` function can also be used standalone for live trading data preparation.
 
 ## TensorBoard
 

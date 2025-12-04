@@ -179,6 +179,82 @@ def load_or_download(
     return df
 
 
+def load_all_symbols(
+    days: int = 60,
+    cache_dir: str = "data",
+    timeframe: TimeFrame = TimeFrame.Minute,
+    force_download: bool = False,
+) -> pd.DataFrame:
+    """
+    Load and combine BTC/USD, ETH/USD, and LTC/USD into a single DataFrame.
+    
+    Adds interconnectivity features between the three symbols.
+    
+    Args:
+        days: Number of days of history
+        cache_dir: Directory to cache data
+        timeframe: Data granularity (Hour or Minute)
+        force_download: If True, force re-download even if cache exists
+    
+    Returns:
+        Combined DataFrame with all symbols, sorted by timestamp
+    """
+    symbols = ["BTC/USD", "ETH/USD", "LTC/USD"]
+    
+    print(f"\n{'='*50}")
+    print(f"Loading {len(symbols)} symbols: {', '.join(symbols)}")
+    print(f"{'='*50}")
+    
+    # Step 1: Load each symbol with basic feature engineering
+    symbol_dfs = {}
+    for symbol in symbols:
+        print(f"\nLoading {symbol}...")
+        df = load_or_download(
+            symbol=symbol,
+            days=days,
+            cache_dir=cache_dir,
+            timeframe=timeframe,
+            force_download=force_download,
+            apply_feature_engineering=True,
+        )
+        symbol_dfs[symbol] = df
+    
+    # Step 2: Add interconnectivity features
+    print(f"\n{'='*50}")
+    print("Adding interconnectivity features...")
+    print(f"{'='*50}")
+    from feature_engineering import add_interconnectivity_features
+    symbol_dfs = add_interconnectivity_features(symbol_dfs)
+    
+    # Step 3: Add symbol identifier features and combine
+    print(f"\n{'='*50}")
+    print("Combining symbols...")
+    print(f"{'='*50}")
+    
+    all_dfs = []
+    for symbol in symbols:
+        df = symbol_dfs[symbol].copy()
+        
+        # Add one-hot encoded symbol features
+        for s in symbols:
+            df[f"symbol_{s.replace('/', '_')}"] = 1.0 if s == symbol else 0.0
+        
+        all_dfs.append(df)
+    
+    # Combine all DataFrames
+    combined_df = pd.concat(all_dfs, axis=0)
+    combined_df = combined_df.sort_index()
+    
+    print(f"Combined dataset shape: {combined_df.shape}")
+    print(f"Total rows: {len(combined_df)}")
+    print(f"Total features: {len(combined_df.columns)}")
+    
+    if len(combined_df) > 0:
+        print(f"Date range: {combined_df.index.min()} to {combined_df.index.max()}")
+    
+    return combined_df
+
+
 if __name__ == "__main__":
     df = load_or_download("BTC/USD", days=1460, timeframe=TimeFrame.Minute)
     print(df.head())

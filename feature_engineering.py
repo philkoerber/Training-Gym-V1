@@ -246,6 +246,130 @@ def engineer_features(
     return df
 
 
+def add_interconnectivity_features(
+    symbol_dfs: dict[str, pd.DataFrame],
+    periods: list[int] = [7, 14, 30],
+) -> dict[str, pd.DataFrame]:
+    """
+    Add features that express interconnectivity between multiple symbols.
+    
+    This function adds cross-symbol features like:
+    - Price ratios (BTC/ETH, BTC/LTC, ETH/LTC)
+    - Relative returns
+    - Correlation features
+    - Spread features
+    - Relative strength
+    
+    Args:
+        symbol_dfs: Dictionary mapping symbol names to DataFrames with 'close' column
+        periods: Periods for rolling calculations
+    
+    Returns:
+        Dictionary with updated DataFrames containing interconnectivity features
+    """
+    symbol_dfs = {k: v.copy() for k, v in symbol_dfs.items()}
+    symbols = list(symbol_dfs.keys())
+    
+    if len(symbols) < 2:
+        return symbol_dfs
+    
+    # Align all DataFrames by timestamp (inner join to keep only common timestamps)
+    aligned_dfs = {}
+    for symbol in symbols:
+        aligned_dfs[symbol] = symbol_dfs[symbol][["close"]].copy()
+    
+    # Merge all closes into one DataFrame
+    all_closes = pd.DataFrame(index=aligned_dfs[symbols[0]].index)
+    for symbol in symbols:
+        all_closes[symbol] = aligned_dfs[symbol]["close"]
+    
+    # Remove rows where any symbol has NaN
+    all_closes = all_closes.dropna()
+    
+    if len(all_closes) == 0:
+        print("Warning: No overlapping timestamps found for interconnectivity features")
+        return symbol_dfs
+    
+    # Calculate price ratios between all pairs
+    for i, symbol1 in enumerate(symbols):
+        for symbol2 in symbols[i+1:]:
+            ratio = all_closes[symbol1] / (all_closes[symbol2] + 1e-8)
+            ratio_name = f"{symbol1.replace('/', '_')}_to_{symbol2.replace('/', '_')}_ratio"
+            
+            # Add ratio to both symbols
+            for symbol in [symbol1, symbol2]:
+                if ratio_name not in symbol_dfs[symbol].columns:
+                    symbol_dfs[symbol][ratio_name] = ratio.reindex(symbol_dfs[symbol].index)
+            
+            # Add ratio returns (rate of change)
+            ratio_returns = ratio.pct_change()
+            ratio_returns_name = f"{symbol1.replace('/', '_')}_to_{symbol2.replace('/', '_')}_ratio_returns"
+            for symbol in [symbol1, symbol2]:
+                if ratio_returns_name not in symbol_dfs[symbol].columns:
+                    symbol_dfs[symbol][ratio_returns_name] = ratio_returns.reindex(symbol_dfs[symbol].index)
+    
+    # Calculate relative returns (how each symbol performs vs others)
+    for symbol in symbols:
+        other_symbols = [s for s in symbols if s != symbol]
+        if other_symbols:
+            # Average return of other symbols
+            other_returns = pd.DataFrame()
+            for other in other_symbols:
+                other_returns[other] = aligned_dfs[other]["close"].pct_change()
+            avg_other_returns = other_returns.mean(axis=1)
+            
+            # This symbol's return
+            symbol_returns = aligned_dfs[symbol]["close"].pct_change()
+            
+            # Relative return (this symbol vs average of others)
+            relative_return = symbol_returns - avg_other_returns
+            symbol_dfs[symbol]["relative_return_vs_others"] = relative_return.reindex(symbol_dfs[symbol].index)
+    
+    # Rolling correlations between symbols
+    for period in periods:
+        for i, symbol1 in enumerate(symbols):
+            for symbol2 in symbols[i+1:]:
+                # Calculate rolling correlation of returns
+                returns1 = all_closes[symbol1].pct_change()
+                returns2 = all_closes[symbol2].pct_change()
+                
+                # Align returns on common index
+                returns_df = pd.DataFrame({
+                    symbol1: returns1,
+                    symbol2: returns2
+                }).dropna()
+                
+                # Calculate rolling correlation
+                # For 2 columns, we can use a vectorized approach
+                rolling_corr = returns_df[symbol1].rolling(window=period).corr(returns_df[symbol2])
+                
+                corr_name = f"corr_{period}d_{symbol1.replace('/', '_')}_{symbol2.replace('/', '_')}"
+                
+                for symbol in [symbol1, symbol2]:
+                    if corr_name not in symbol_dfs[symbol].columns:
+                        symbol_dfs[symbol][corr_name] = rolling_corr.reindex(symbol_dfs[symbol].index)
+    
+    # Market dominance features (each symbol's share of total market cap proxy)
+    # Using price as proxy (in real trading, you'd use market cap)
+    total_price = all_closes.sum(axis=1)
+    for symbol in symbols:
+        dominance = all_closes[symbol] / (total_price + 1e-8)
+        symbol_dfs[symbol]["market_dominance"] = dominance.reindex(symbol_dfs[symbol].index)
+    
+    # Relative strength (RSI of price ratio)
+    for i, symbol1 in enumerate(symbols):
+        for symbol2 in symbols[i+1:]:
+            ratio = all_closes[symbol1] / (all_closes[symbol2] + 1e-8)
+            ratio_rsi = calculate_rsi(ratio, period=14)
+            rsi_name = f"rsi_{symbol1.replace('/', '_')}_to_{symbol2.replace('/', '_')}"
+            
+            for symbol in [symbol1, symbol2]:
+                if rsi_name not in symbol_dfs[symbol].columns:
+                    symbol_dfs[symbol][rsi_name] = ratio_rsi.reindex(symbol_dfs[symbol].index)
+    
+    return symbol_dfs
+
+
 def prepare_for_live_trading(
     df: pd.DataFrame,
     timestamp_col: Optional[str] = None,

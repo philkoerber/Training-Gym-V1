@@ -1,18 +1,18 @@
 """Training script for time-series forecasting."""
 
+import os
 import lightning as L
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import TensorBoardLogger
 from alpaca.data.timeframe import TimeFrame
 
 from callbacks import QuantConnectUploadCallback
-from data_loader import load_or_download
+from data_loader import load_all_symbols
 from dataset import create_dataloaders
 from model import TimeSeriesLightningModule
 
 
 def train(
-    symbol: str = "BTC/USD",
     days: int = 1460,  # 4 years
     seq_len: int = 60,  # 60 minutes = 1 hour for minutely data
     pred_len: int = 1,
@@ -25,10 +25,9 @@ def train(
     timeframe: TimeFrame = TimeFrame.Minute,
 ):
     """
-    Train a time-series forecasting model.
+    Train a time-series forecasting model on BTC/USD, ETH/USD, and LTC/USD.
     
     Args:
-        symbol: Crypto pair to train on
         days: Days of historical data (default: 1460 = 4 years)
         seq_len: Input sequence length (lookback)
         pred_len: Prediction horizon
@@ -40,12 +39,17 @@ def train(
         lr: Learning rate
         timeframe: Data granularity (TimeFrame.Minute or TimeFrame.Hour)
     """
-    # Load data
+    # Load all three symbols with interconnectivity features
     timeframe_str = "minutely" if timeframe == TimeFrame.Minute else "hourly"
     print(f"\n{'='*50}")
-    print(f"Loading {symbol} {timeframe_str} data ({days} days)...")
+    print(f"Loading BTC/USD, ETH/USD, LTC/USD")
+    print(f"{timeframe_str} data ({days} days)...")
     print(f"{'='*50}")
-    df = load_or_download(symbol=symbol, days=days, timeframe=timeframe)
+    
+    df = load_all_symbols(
+        days=days,
+        timeframe=timeframe,
+    )
     
     # Create dataloaders
     print(f"\nCreating dataloaders (seq_len={seq_len}, pred_len={pred_len})...")
@@ -123,8 +127,7 @@ def train(
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Train time-series forecaster")
-    parser.add_argument("--symbol", type=str, default="BTC/USD")
+    parser = argparse.ArgumentParser(description="Train time-series forecaster on BTC/USD, ETH/USD, LTC/USD")
     parser.add_argument("--days", type=int, default=1460)  # 4 years
     parser.add_argument("--seq_len", type=int, default=60)  # 60 minutes for minutely data
     parser.add_argument("--pred_len", type=int, default=1)
@@ -142,7 +145,6 @@ if __name__ == "__main__":
     tf = TimeFrame.Minute if args.timeframe == "minute" else TimeFrame.Hour
     
     train(
-        symbol=args.symbol,
         days=args.days,
         seq_len=args.seq_len,
         pred_len=args.pred_len,

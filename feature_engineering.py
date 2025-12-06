@@ -21,8 +21,7 @@ def add_time_features(df: pd.DataFrame, timestamp_col: Optional[str] = None) -> 
     This creates features that capture:
     - Hour of day (0-23) -> sin/cos
     - Day of week (0-6, Monday=0) -> sin/cos
-    - Day of month (1-31) -> sin/cos
-    - Month (1-12) -> sin/cos
+    - Week of month (1-5) -> sin/cos
     
     Args:
         df: DataFrame with datetime index or timestamp column
@@ -55,15 +54,14 @@ def add_time_features(df: pd.DataFrame, timestamp_col: Optional[str] = None) -> 
     df["day_of_week_sin"] = np.sin(2 * np.pi * day_of_week / 7)
     df["day_of_week_cos"] = np.cos(2 * np.pi * day_of_week / 7)
     
-    # Day of month (1-31) - cycles every ~30 days
+    # Week of month (1-5) - cycles every ~5 weeks
+    # Calculate which week of the month (1st week = days 1-7, 2nd = 8-14, etc.)
     day_of_month = dt_index.day
-    df["day_of_month_sin"] = np.sin(2 * np.pi * day_of_month / 31)
-    df["day_of_month_cos"] = np.cos(2 * np.pi * day_of_month / 31)
-    
-    # Month (1-12) - cycles every 12 months
-    month = dt_index.month
-    df["month_sin"] = np.sin(2 * np.pi * month / 12)
-    df["month_cos"] = np.cos(2 * np.pi * month / 12)
+    week_of_month = ((day_of_month - 1) // 7) + 1
+    # Normalize to 0-4 for cycle (max 5 weeks, but use 0-4 for better distribution)
+    week_of_month_normalized = week_of_month - 1  # 0-4
+    df["week_of_month_sin"] = np.sin(2 * np.pi * week_of_month_normalized / 5)
+    df["week_of_month_cos"] = np.cos(2 * np.pi * week_of_month_normalized / 5)
     
     return df
 

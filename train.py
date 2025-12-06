@@ -24,6 +24,7 @@ def train(
     lr: float = 1e-3,
     timeframe: TimeFrame = TimeFrame.Minute,
     use_cloud: bool = False,
+    num_workers: int = 7,
 ):
     """
     Train a time-series forecasting model on BTC/USD, ETH/USD, and LTC/USD.
@@ -60,6 +61,7 @@ def train(
         seq_len=seq_len,
         pred_len=pred_len,
         batch_size=batch_size,
+        num_workers=num_workers,
     )
     
     print(f"Train batches: {len(train_loader)}")
@@ -165,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--timeframe", type=str, default="minute", choices=["minute", "hour"])
     parser.add_argument("--cloud", action="store_true", help="Train on cloud/remote GPU servers instead of local MPS")
+    parser.add_argument("--num_workers", type=int, default=7, help="Number of DataLoader worker processes")
     
     args = parser.parse_args()
     
@@ -183,5 +186,6 @@ if __name__ == "__main__":
         lr=args.lr,
         timeframe=tf,
         use_cloud=args.cloud,
+        num_workers=args.num_workers,
     )
 

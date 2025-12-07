@@ -1,0 +1,21 @@
+# Exclude large data files from cloud upload
+data/
+*.csv
+
+# Exclude checkpoints and logs (will be generated on cloud)
+checkpoints/
+logs/
+__pycache__/
+*.pyc
+
+# Exclude virtual environment
+venv/
+
+# Exclude installed packages backup
+installed_packages_before_cleanup.txt
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

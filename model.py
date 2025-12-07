@@ -1,52 +1,12 @@
-"""Lightning model for time-series forecasting."""
+"""Lightning model for time-series forecasting with PatchTST."""
 
 import lightning as L
 import torch
 import torch.nn as nn
 
 
-class LSTMForecaster(nn.Module):
-    """Simple LSTM for time-series forecasting."""
-    
-    def __init__(
-        self,
-        input_dim: int = 5,
-        hidden_dim: int = 64,
-        num_layers: int = 2,
-        pred_len: int = 1,
-        dropout: float = 0.1,
-    ):
-        super().__init__()
-        
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0,
-        )
-        
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, pred_len),
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq_len, input_dim)
-        lstm_out, _ = self.lstm(x)
-        
-        # Use last hidden state
-        last_hidden = lstm_out[:, -1, :]  # (batch, hidden_dim)
-        
-        # Predict
-        out = self.fc(last_hidden)  # (batch, pred_len)
-        return out
-
-
-class TransformerForecaster(nn.Module):
-    """Simple Transformer encoder for time-series forecasting."""
+class PatchTST(nn.Module):
+    """PatchTST: Patch-based Transformer for time-series forecasting."""
     
     def __init__(
         self,
@@ -56,15 +16,26 @@ class TransformerForecaster(nn.Module):
         num_layers: int = 2,
         pred_len: int = 1,
         dropout: float = 0.1,
-        seq_len: int = 24,
+        seq_len: int = 60,
+        patch_len: int = 8,
+        stride: int = 4,
     ):
         super().__init__()
+        self.seq_len = seq_len
+        self.patch_len = patch_len
+        self.stride = stride
+        self.input_dim = input_dim
         
-        self.input_proj = nn.Linear(input_dim, d_model)
+        # Calculate number of patches
+        self.num_patches = (seq_len - patch_len) // stride + 1
         
-        # Positional encoding
-        self.pos_encoding = nn.Parameter(torch.randn(1, seq_len, d_model) * 0.1)
+        # Patch embedding: project patches to d_model
+        self.patch_embedding = nn.Linear(patch_len * input_dim, d_model)
         
+        # Learnable positional encoding
+        self.pos_encoding = nn.Parameter(torch.randn(1, self.num_patches, d_model) * 0.1)
+        
+        # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -74,63 +45,84 @@ class TransformerForecaster(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         
-        self.fc = nn.Sequential(
+        # Prediction head
+        self.head = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(d_model // 2, pred_len),
         )
     
+    def create_patches(self, x: torch.Tensor) -> torch.Tensor:
+        """Split sequence into patches.
+        
+        Args:
+            x: (batch, seq_len, input_dim)
+        
+        Returns:
+            (batch, num_patches, patch_len * input_dim)
+        """
+        batch_size = x.shape[0]
+        patches = []
+        
+        for i in range(self.num_patches):
+            start = i * self.stride
+            end = start + self.patch_len
+            patch = x[:, start:end, :]  # (batch, patch_len, input_dim)
+            patch = patch.reshape(batch_size, -1)  # (batch, patch_len * input_dim)
+            patches.append(patch)
+        
+        return torch.stack(patches, dim=1)  # (batch, num_patches, patch_len * input_dim)
+    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (batch, seq_len, input_dim)
-        x = self.input_proj(x)  # (batch, seq_len, d_model)
+        patches = self.create_patches(x)  # (batch, num_patches, patch_len * input_dim)
+        
+        # Embed patches
+        x = self.patch_embedding(patches)  # (batch, num_patches, d_model)
         x = x + self.pos_encoding
         
-        x = self.transformer(x)  # (batch, seq_len, d_model)
+        # Transformer encoding
+        x = self.transformer(x)  # (batch, num_patches, d_model)
         
-        # Use mean pooling over sequence
-        x = x.mean(dim=1)  # (batch, d_model)
+        # Use last patch for prediction (most recent information)
+        x = x[:, -1, :]  # (batch, d_model)
         
-        out = self.fc(x)  # (batch, pred_len)
+        # Predict
+        out = self.head(x)  # (batch, pred_len)
         return out
 
 
 class TimeSeriesLightningModule(L.LightningModule):
-    """Lightning wrapper for time-series models."""
+    """Lightning wrapper for PatchTST model."""
     
     def __init__(
         self,
-        model_type: str = "lstm",
         input_dim: int = 5,
-        hidden_dim: int = 64,
+        d_model: int = 64,
+        nhead: int = 4,
         num_layers: int = 2,
         pred_len: int = 1,
-        seq_len: int = 24,
+        seq_len: int = 60,
+        patch_len: int = 8,
+        stride: int = 4,
         lr: float = 1e-3,
         dropout: float = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters()
         
-        if model_type == "lstm":
-            self.model = LSTMForecaster(
-                input_dim=input_dim,
-                hidden_dim=hidden_dim,
-                num_layers=num_layers,
-                pred_len=pred_len,
-                dropout=dropout,
-            )
-        elif model_type == "transformer":
-            self.model = TransformerForecaster(
-                input_dim=input_dim,
-                d_model=hidden_dim,
-                num_layers=num_layers,
-                pred_len=pred_len,
-                dropout=dropout,
-                seq_len=seq_len,
-            )
-        else:
-            raise ValueError(f"Unknown model_type: {model_type}")
+        self.model = PatchTST(
+            input_dim=input_dim,
+            d_model=d_model,
+            nhead=nhead,
+            num_layers=num_layers,
+            pred_len=pred_len,
+            dropout=dropout,
+            seq_len=seq_len,
+            patch_len=patch_len,
+            stride=stride,
+        )
         
         self.criterion = nn.MSELoss()
         self.lr = lr
@@ -143,10 +135,7 @@ class TimeSeriesLightningModule(L.LightningModule):
         y_hat = self(x)
         loss = self.criterion(y_hat, y)
         
-        # Log metrics
         self.log(f"{stage}_loss", loss, prog_bar=True)
-        
-        # Also log MAE
         mae = torch.mean(torch.abs(y_hat - y))
         self.log(f"{stage}_mae", mae, prog_bar=True)
         
@@ -173,4 +162,3 @@ class TimeSeriesLightningModule(L.LightningModule):
                 "monitor": "val_loss",
             },
         }
-

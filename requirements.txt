@@ -20,3 +20,5 @@ tensorboard>=2.20.0
 
 # Cloud Training (optional - only needed for Lightning AI cloud)
 lightning-app>=2.0.0
+uvicorn<0.36.0  # Required for lightning-app compatibility
+urllib3<2.0.0  # Required for lightning-cloud compatibility

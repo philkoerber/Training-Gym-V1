@@ -27,46 +27,90 @@ class TimeSeriesDataset(Dataset):
     ):
         self.seq_len = seq_len
         self.pred_len = pred_len
+        
+        # Always compute returns as target
+        data = data.copy()
+        # Compute forward returns: (next_close - current_close) / current_close
+        if "close" not in data.columns:
+            raise ValueError("Cannot compute returns: 'close' column not found")
+        # Shift to get next close, then compute return
+        data["target_returns"] = (data["close"].shift(-pred_len) - data["close"]) / data["close"]
+        # Drop rows where returns are NaN (last pred_len rows)
+        # This is safe because __len__ already accounts for pred_len
+        data = data.dropna(subset=["target_returns"])
+        # Use returns as target column
+        target_col = "target_returns"
+        
         self.target_col = target_col
         
-        # Select features
+        # Select features (excluding target column from input to avoid data leak)
         if feature_cols is None:
             feature_cols = data.select_dtypes(include=[np.number]).columns.tolist()
-        self.feature_cols = feature_cols
+        else:
+            feature_cols = list(feature_cols)  # Make a copy
         
-        # Verify target column exists
-        if target_col not in feature_cols:
-            raise ValueError(f"Target column '{target_col}' not found in feature columns: {feature_cols}")
-        self.target_idx = feature_cols.index(target_col)
+        # Ensure target column exists in data (but we'll exclude it from input features)
+        if target_col not in data.columns:
+            raise ValueError(f"Target column '{target_col}' not found in data columns: {list(data.columns)}")
+        
+        # Remove target from input features to avoid data leak
+        # But keep it in a separate list for normalization and target extraction
+        input_feature_cols = [col for col in feature_cols if col != target_col]
+        
+        # For normalization and target extraction, we need both input features AND target
+        # This allows us to normalize them together (for consistent scaling) but exclude target from input
+        all_cols_for_scaling = input_feature_cols + [target_col]
+        
+        # Store both: input features (for model) and all columns (for scaling)
+        self.feature_cols = input_feature_cols  # What goes into the model
+        self.all_cols_for_scaling = all_cols_for_scaling  # What we normalize (includes target)
+        self.target_idx = len(input_feature_cols)  # Target is the last column in scaling array
         
         # Normalize: fit if scaler=None, transform if scaler provided
+        # We normalize input features + target together, but only use input features in model
         if scaler is None:
-            # Training: fit new scaler
+            # Training: fit new scaler on all columns (input + target)
             self.scaler = StandardScaler()
-            self.data = self.scaler.fit_transform(data[feature_cols].values)
+            data_scaled = self.scaler.fit_transform(data[all_cols_for_scaling].values)
         else:
             # Validation/Test: use provided scaler (must be already fitted)
             if not hasattr(scaler, 'mean_') or scaler.mean_ is None:
                 raise ValueError("Provided scaler must be fitted before use")
-            if len(scaler.mean_) != len(feature_cols):
+            expected_cols = len(all_cols_for_scaling)
+            if len(scaler.mean_) != expected_cols:
                 raise ValueError(
                     f"Scaler was fitted on {len(scaler.mean_)} features, "
-                    f"but data has {len(feature_cols)} features. "
+                    f"but data has {expected_cols} features (input + target). "
                     f"Feature columns must match exactly."
                 )
             self.scaler = scaler
-            self.data = self.scaler.transform(data[feature_cols].values)
+            data_scaled = self.scaler.transform(data[all_cols_for_scaling].values)
+        
+        # Store only input features in self.data (exclude target column)
+        self.data = data_scaled[:, :len(input_feature_cols)]
+        # Store target separately for __getitem__
+        self.target_data = data_scaled[:, self.target_idx:self.target_idx+1]  # Keep as 2D for consistency
         
         # Store target scaler params for inverse transform
+        # These are computed from returns
         self.target_mean = self.scaler.mean_[self.target_idx]
         self.target_std = self.scaler.scale_[self.target_idx]
+        
+        # Store original close column index for inference conversion (in input features)
+        if "close" in self.feature_cols:
+            self.close_idx = self.feature_cols.index("close")
+        else:
+            self.close_idx = None
     
     def __len__(self) -> int:
         return len(self.data) - self.seq_len - self.pred_len + 1
     
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        x = self.data[idx : idx + self.seq_len]
-        y = self.data[idx + self.seq_len : idx + self.seq_len + self.pred_len, self.target_idx]
+        x = self.data[idx : idx + self.seq_len]  # Input features only (no target column)
+        # Extract target from separate target_data array
+        y_start = idx + self.seq_len
+        y_end = y_start + self.pred_len
+        y = self.target_data[y_start:y_end, 0]  # Flatten to 1D
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
     
     def inverse_transform_target(self, y: np.ndarray) -> np.ndarray:
@@ -115,13 +159,15 @@ def create_dataloaders(
     if feature_cols is None:
         feature_cols = train_df.select_dtypes(include=[np.number]).columns.tolist()
     
-    # Verify target column exists
-    if target_col not in feature_cols:
-        raise ValueError(f"Target column '{target_col}' not found in feature columns: {feature_cols}")
+    # If using returns, target_col will be changed to "target_returns" inside TimeSeriesDataset
+    # So we don't need to check for target_col in feature_cols here
+    # The dataset will compute target_returns and handle validation internally
     
-    # Verify all feature columns exist in all splits
+    # Verify all feature columns exist in all splits (but target may be computed dynamically)
     for split_name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
-        missing_cols = set(feature_cols) - set(split_df.columns)
+        # Check base columns (excluding target_returns which will be computed)
+        base_cols = [col for col in feature_cols if col != "target_returns"]
+        missing_cols = set(base_cols) - set(split_df.columns)
         if missing_cols:
             raise ValueError(f"Missing feature columns in {split_name} split: {missing_cols}")
     

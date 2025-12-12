@@ -17,7 +17,6 @@ from ..models.patch_tst import TimeSeriesLightningModule
 
 # Data configuration
 DAYS = 1460  # Days of historical data (4 years)
-TIMEFRAME = TimeFrame.Minute  # TimeFrame.Minute or TimeFrame.Hour
 SEQ_LEN = 60  # Input sequence length (lookback window)
 PRED_LEN = 1  # Prediction horizon
 
@@ -30,7 +29,7 @@ STRIDE = 4  # Stride between patches
 
 # Training configuration
 BATCH_SIZE = 32  # Training batch size
-MAX_EPOCHS = 1  # Maximum training epochs
+MAX_EPOCHS = 20  # Maximum training epochs
 LEARNING_RATE = 1e-3  # Learning rate
 NUM_WORKERS = 7  # Number of DataLoader worker processes (for cloud training)
 
@@ -49,7 +48,7 @@ def train(use_cloud: bool = True):
     print(f"Using {num_workers} DataLoader worker(s) ({'cloud' if use_cloud else 'local'})")
     
     # Load all three symbols with interconnectivity features
-    timeframe_str = "minutely" if TIMEFRAME == TimeFrame.Minute else "hourly"
+    timeframe_str = "minutely"
     print(f"\n{'='*50}")
     print(f"Loading BTC/USD, ETH/USD, LTC/USD")
     print(f"{timeframe_str} data ({DAYS} days)...")
@@ -57,7 +56,7 @@ def train(use_cloud: bool = True):
     
     df = load_all_symbols(
         days=DAYS,
-        timeframe=TIMEFRAME,
+        timeframe="minutely",
     )
     
     # Create dataloaders
